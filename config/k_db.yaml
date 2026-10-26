@@ -1,0 +1,6 @@
+host: 192.168.20.210
+schema: energous
+model: esense
+table: ft1
+idTable: esense_id_log
+idColumn: product_id_hex

@@ -1,0 +1,8 @@
+host: 169.254.116.232
+port: 27017
+user: enTest
+password: 'en2026'
+product: e-Sense_v1p1
+ENID_regex: '^[0-9A-Fa-f]{8}$'
+BD_address_regex: '^[0-9A-Fa-f]{12}$'
+Board_sn_regex: '^K[0-9]{11}$'

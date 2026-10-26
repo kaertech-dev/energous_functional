@@ -1,0 +1,26 @@
+board: e-Sense_v1p1
+bridge:
+  setPaVal: 238
+  tx_com_port: COM3
+delays:
+  endTestBleDelay: 90000
+  maxPowerOffDelay: 10000
+  maxPowerOnDelay: 4500
+  setWavePaDelay: 1500
+  setWaveWptDelay: 1500
+  startBleDelay: 30000
+limits:
+  Adv_Count_max: 8
+  Adv_Count_min: 1
+  RSSI_max: 1.0
+  RSSI_min: -85.0
+  TTFA_max: 8000
+  TTFA_min: 0
+station: Kaertech_FT_1
+tagID:
+  regEx: ^K[0-9]{11}$
+  regExLen: 12
+  regExLen_no_db: 8
+  regEx_no_db: ^[0-9A-Fa-f]{8}$
+  scan_watch: 0
+upload_to_db: '0'
