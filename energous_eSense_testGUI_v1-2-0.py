@@ -436,6 +436,7 @@ class TestSetup(ttk.Frame):
 
                 if len(didNotPass) > 0:
                     messagebox.showerror("Error", f"Unit did not pass {', '.join(didNotPass)}")
+                    # return {'serial_num': serial_num, 'po_num': ponum, 'test_rep': -1}
                     return {}
         
                 # check if retest
@@ -448,9 +449,11 @@ class TestSetup(ttk.Frame):
                     curr_trep = 1
                 elif trep[0]['test_rep'] >= 3:
                     messagebox.showerror("Error", 'No more retests allowed')
+                    # return {'serial_num': serial_num, 'po_num': ponum, 'test_rep': -1}
                     return {}
                 elif trep[0]['status'] == 1:
                     messagebox.showerror("Error", 'Unit already passed')
+                    # return {'serial_num': serial_num, 'po_num': ponum, 'test_rep': -1}
                     return {}
                 else:
                     curr_trep = len(trep) + 1
@@ -891,7 +894,7 @@ class ResultScreen(ttk.Frame):
         # self.retest_button = ttk.Button(self, width=25, text="Retest", command=self.retest_button_helper)
         self.done_button = ttk.Button(self, width=25, text="Done", command=self.done_button_helper)
 
-        self.rb_query = " SELECT `product_id` FROM `" + f"{db_model}_{db_table}" + "` WHERE `product_id` = %s"
+        self.rb_query = " SELECT `serial_num` FROM `" + f"{db_model}_{db_table}" + "` WHERE `serial_num` = %s"
 
         for child in self.winfo_children():
             child.grid_configure(padx=5, pady=5)
@@ -978,6 +981,9 @@ class ResultScreen(ttk.Frame):
         global result_list
         global tag_db_details
 
+        db_conn = pymysql.connect(**db_config)
+        cursor = db_conn.cursor(DictCursor)
+
         for i in range(num_tags):
             if STORE_TO_DB.get() == "1":
                 self.tag_frames[i].tagText.set(tags_tested[i]["Board_Serial"])
@@ -988,18 +994,37 @@ class ResultScreen(ttk.Frame):
             db_deets = tag_db_details.pop(prod_id)
 
             now = datetime.now()
-            test_details = db_deets | login_details | {'date_time': now.isoformat(sep=' ', timespec='seconds'), 'product_id': prod_id}
-            print(test_details)
+            test_details = db_deets | login_details | {'date_time': now.isoformat(sep=' ', timespec='seconds')}
 
             try:
                 if result_list[i] == 0:
                     self.tag_frames[i].tagObject.config(background="red")
                     self.tag_frames[i].spotLabel.config(background="red")
+                    test_details['remarks'] =  f"POS{i} " + tags_tested[i]["Fail_Reason"]
+                    test_details['status'] = 0
                 else:
                     self.tag_frames[i].tagObject.config(background="lightgreen")
                     self.tag_frames[i].spotLabel.config(background="lightgreen")
+                    test_details['status'] = 1
             except IndexError:
                 pass
+
+            print(test_details)
+            if db_deets.get('test_rep', 0) > 1:
+                table_name = f"`{db_model}_{db_table}`"
+                serial_num = db_deets.get('serial_num')
+                trep_query = " SELECT `test_rep` FROM " + table_name + " WHERE `serial_num` = %s "
+                cursor.execute(trep_query, (serial_num,))
+                last_rep = cursor.fetchone()['test_rep']
+                print('last rep:', last_rep)
+
+            curr_headers = list(test_details.keys())
+            values = [f"%({head})s" for head in curr_headers]
+            write_query = f" INSERT INTO `{db_model}_{db_table}` ({','.join(curr_headers)}) VALUES ({', '.join(values)})"
+            print(write_query)
+
+        cursor.close()
+        db_conn.close()
 
     def _dev_mode(self, event):
         global result_list
@@ -1030,24 +1055,28 @@ class ResultScreen(ttk.Frame):
                         self.tag_frames[i].tagText.set(tags_tested[i]["ENID"])
 
                     prod_id = self.tag_frames[i].tagText.get().upper()
-                    db_deets = tag_db_details.pop(prod_id, {})
+                    try:
+                        db_deets = tag_db_details.pop(prod_id)
+                    except KeyError:
+                        messagebox.showerror('Error', 'Unit has no details in Database')
+                        continue
         
                     now = datetime.now()
-                    test_details = db_deets | login_details | {'date_time': now.isoformat(sep=' ', timespec='seconds'), 'product_id': prod_id}
+                    test_details = db_deets | login_details | {'date_time': now.isoformat(sep=' ', timespec='seconds')}
                     
                     if result_list[i] == 0:
                         self.tag_frames[i].tagObject.config(background="red")
                         self.tag_frames[i].spotLabel.config(background="red")
-                        test_details['remarks'] = f'FAILED {db_table.upper()}'
+                        test_details['remarks'] = f"POS{i} " + tags_tested[i]["Fail_Reason"]
                         test_details['status'] = 0
                     else:
                         self.tag_frames[i].tagObject.config(background="lightgreen")
                         self.tag_frames[i].spotLabel.config(background="lightgreen")
                         test_details['status'] = 1
 
-                    if db_deets['test_rep'] > 1:
+                    if db_deets.get('test_rep', 0) > 1:
                         table_name = f"`{db_model}_{db_table}`"
-                        serial_num = db_deets['serial_num']
+                        serial_num = db_deets.get('serial_num')
                         trep_query = " SELECT `test_rep` FROM " + table_name + " WHERE `serial_num` = %s "
                         cursor.execute(trep_query, (serial_num,))
                         last_rep = cursor.fetchone()['test_rep']
@@ -1065,14 +1094,17 @@ class ResultScreen(ttk.Frame):
 
                     write_success = False
                     for i in range(3):
-                        cursor.execute(write_query, test_details)
-                        db_conn.commit()
+                        try:
+                            cursor.execute(write_query, test_details)
+                            db_conn.commit()
 
-                        cursor.execute(self.rb_query, (prod_id,))
-                        resp = cursor.fetchone()
-                        if resp:
-                            write_success = True
-                            break
+                            cursor.execute(self.rb_query, (test_details['serial_num'],))
+                            resp = cursor.fetchone()
+                            if resp:
+                                write_success = True
+                                break
+                        except:
+                            pass
 
                     if not write_success:
                         messagebox.showerror("Error", "Database write failed.")
